@@ -8,31 +8,31 @@ import Shader from "./shader.js";
 
 /**
  * @class
- * @description A WebGL batch renderer for drawing 2D quads efficiently.
+ * @description A WebGL batch renderer for drawing 2D primitives efficiently.
  */
 export default
 class Batcher {
     /**
      * Creates an instance of Batcher.
      * @param {WebGLRenderingContext} gl The WebGL rendering context.
-     * @param {number} [maxQuads=1024] The maximum number of quads the batcher can hold before a flush is required.
+     * @param {number} [maxVertices=4096] The maximum number of vertices the batcher can hold.
+     * @param {number} [maxIndices=6144] The maximum number of indices the batcher can hold.
      */
-    constructor(gl, maxQuads = 1024) {
+    constructor(gl, maxVertices = 4096, maxIndices = 6144) {
         this.gl = gl;
         this.vbo = this.gl.createBuffer();
         this.ibo = this.gl.createBuffer();
 
-        // 4 vertices per quad, 7 floats per vertex (x, y, u, v, r, g, b, a) -> should be 8 floats per vertex!
-        // The original code has 7 floats per vertex in the constructor, but 8 floats when filling in `vertex`.
-        // I will assume 8 floats per vertex as per the `vertex` method's implementation:
-        // x, y, u, v, r, g, b, a (8 components)
-        // Stride in `flush` is 32 (8 components * 4 bytes/float), which confirms 8 components.
-        this.vertices = new Float32Array(maxQuads * 4 * 8); // Corrected size: 4 vertices * 8 floats
-        this.maxQuads = maxQuads;
+        // 8 floats per vertex: x, y, u, v, r, g, b, a
+        this.vertices = new Float32Array(maxVertices * 8);
+        this.indices = new Uint16Array(maxIndices);
+        
+        this.maxVertices = maxVertices;
+        this.maxIndices = maxIndices;
         this.currVert = 0;
-        this.currQuad = 0;
+        this.currVertCount = 0; // Number of vertices added (not float count)
+        this.currIndex = 0;
 
-        this.whitePixel = new Texture(this.gl, createWhitePixel());
         /** @type {Texture} */
         this.texture = null;
         /** @type {Shader} */
@@ -40,22 +40,15 @@ class Batcher {
         /** @type {number[]} */
         this.color = [1, 1, 1, 1];
 
-        // @todo: Should I do it every frame?
         this.proj = orthoMat4(0, this.gl.canvas.width, this.gl.canvas.height, 0, -1, 1);
 
-        // Quads are super predictable, so we can just
-        // pre-allocate the indices buffer before have the vertices.
-        const indices = new Uint16Array(maxQuads * 6);
-        for (let i = 0, j = 0; i < indices.length; i += 6, j += 4) {
-            indices[i + 0] = j + 0;
-            indices[i + 1] = j + 1;
-            indices[i + 2] = j + 2;
-            indices[i + 3] = j + 0;
-            indices[i + 4] = j + 2;
-            indices[i + 5] = j + 3;
-        }
-        this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.ibo);
-        this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indices, this.gl.STATIC_DRAW);
+        // Use a default shader
+        this.defaultShader = Shader.default(gl);
+        this.setShader(null);
+
+        // Create a white pixel texture for colored shapes
+        this.whitePixel = new Texture(this.gl, createWhitePixel());
+        this.setTexture(this.whitePixel);
     }
 
     /**
@@ -70,47 +63,46 @@ class Batcher {
     }
 
     /**
-     * Draws all batched quads and resets the batch counter.
+     * Draws all batched primitives and resets the batch counter.
      */
     flush() {
-        if (this.currQuad === 0 || !this.texture || !this.shader) {
-            return;
+        if (this.currIndex === 0 || !this.texture || !this.shader) {
+            return; // Nothing to draw
         }
 
         const aPosition = this.shader.getAttrib('a_position');
         const aTexcoords = this.shader.getAttrib('a_texcoords');
         const aColor = this.shader.getAttrib('a_color');
 
-        // Stride is 8 components * 4 bytes/float = 32 bytes
-        const stride = 32;
+        const stride = 32; // 8 floats * 4 bytes
 
         if (aPosition !== null && aTexcoords !== null && aColor !== null) {
             this.gl.useProgram(this.shader.id);
 
+            // Upload vertex data
             this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vbo);
-            // Use subData or a smaller buffer slice for performance, but keeping original logic with bufferData
             this.gl.bufferData(this.gl.ARRAY_BUFFER, this.vertices.subarray(0, this.currVert), this.gl.DYNAMIC_DRAW);
+            
+            // Upload index data
             this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+            this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, this.indices.subarray(0, this.currIndex), this.gl.DYNAMIC_DRAW);
 
             this.gl.enableVertexAttribArray(aPosition);
             this.gl.enableVertexAttribArray(aTexcoords);
             this.gl.enableVertexAttribArray(aColor);
 
-            // a_position: offset 0 (x, y)
             this.gl.vertexAttribPointer(aPosition, 2, this.gl.FLOAT, false, stride, 0);
-            // a_texcoords: offset 8 (u, v)
             this.gl.vertexAttribPointer(aTexcoords, 2, this.gl.FLOAT, false, stride, 8);
-            // a_color: offset 16 (r, g, b, a)
             this.gl.vertexAttribPointer(aColor, 4, this.gl.FLOAT, false, stride, 16);
 
             this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture.id);
-            this.gl.drawElements(this.gl.TRIANGLES, this.currQuad * 6, this.gl.UNSIGNED_SHORT, 0);
+            this.gl.drawElements(this.gl.TRIANGLES, this.currIndex, this.gl.UNSIGNED_SHORT, 0);
 
             this.currVert = 0;
-            this.currQuad = 0;
-        }
-        else {
-            console.error("Your shader is missing some attributes: a_position, a_texcoords, or a_color.");
+            this.currVertCount = 0;
+            this.currIndex = 0;
+        } else {
+            throw new Error("Shader is missing required attributes (a_position, a_texcoords or a_color)");
         }
     }
 
@@ -119,9 +111,9 @@ class Batcher {
      * @param {number} r Red component (0.0 to 1.0).
      * @param {number} g Green component (0.0 to 1.0).
      * @param {number} b Blue component (0.0 to 1.0).
-     * @param {number} a Alpha component (0.0 to 1.0).
+     * @param {number} [a=1] Alpha component (0.0 to 1.0).
      */
-    setColor(r, g, b, a) {
+    setColor(r, g, b, a = 1) {
         this.color[0] = r;
         this.color[1] = g;
         this.color[2] = b;
@@ -140,10 +132,12 @@ class Batcher {
     }
 
     /**
-     * Sets the current shader program. Flushes the batch if the shader changes and uploads the projection matrix.
-     * @param {Shader} shader The new shader to use.
+     * Sets the current shader program. Flushes the batch if the shader changes.
+     * @param {Shader|null} shader The new shader to use, or null for the default shader.
      */
     setShader(shader) {
+        shader = shader || this.defaultShader;
+
         if (this.shader !== shader) {
             this.flush();
             this.shader = shader;
@@ -174,37 +168,44 @@ class Batcher {
         this.vertices[this.currVert++] = g;
         this.vertices[this.currVert++] = b;
         this.vertices[this.currVert++] = a;
+        this.currVertCount++;
     }
 
     /**
-     * Pushes a quad defined by its transformed coordinates into the batch buffer.
-     * Flushes the batch if the capacity is reached.
+     * Checks if there's enough space for vertices and indices, flushes if needed.
      * @private
-     * @param {number} x The world x-position of the quad's origin.
-     * @param {number} y The world y-position of the quad's origin.
-     * @param {number} w The width of the quad.
-     * @param {number} h The height of the quad.
+     * @param {number} numVertices Number of vertices needed.
+     * @param {number} numIndices Number of indices needed.
+     */
+    ensureSpace(numVertices, numIndices) {
+        if (this.currVertCount + numVertices > this.maxVertices || 
+            this.currIndex + numIndices > this.maxIndices) {
+            this.flush();
+        }
+    }
+
+    /**
+     * Draws a textured quad with transformations.
+     * @param {Texture} tex The texture to draw.
+     * @param {number} x The world x-position.
+     * @param {number} y The world y-position.
      * @param {number} [rot=0] The rotation angle in radians.
      * @param {number} [sx=1] The scale factor on the x-axis.
      * @param {number} [sy=1] The scale factor on the y-axis.
-     * @param {number} [px=0.5] The pivot point x-coordinate (0.0 to 1.0).
-     * @param {number} [py=0.5] The pivot point y-coordinate (0.0 to 1.0).
+     * @param {number} [px=0] The pivot point x-coordinate (0.0 to 1.0).
+     * @param {number} [py=0] The pivot point y-coordinate (0.0 to 1.0).
      * @param {number} [u1=0] The left u texture coordinate.
      * @param {number} [v1=0] The top v texture coordinate.
      * @param {number} [u2=1] The right u texture coordinate.
      * @param {number} [v2=1] The bottom v texture coordinate.
      */
-    // @note: We are doing the matrix transformation manually here because
-    // it is too much expensive to have matrices multiplication on web devices.
-    pushQuad(x, y, w, h, rot = 0, sx = 1, sy = 1, px = 0.5, py = 0.5, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
-        if (this.currQuad >= this.maxQuads) {
-            this.flush();
-        }
+    drawTex(tex, x, y, rot = 0, sx = 1, sy = 1, px = 0, py = 0, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
+        this.setTexture(tex);
+        this.ensureSpace(4, 6);
 
-        w = w * sx;
-        h = h * sy;
+        const w = tex.width * sx;
+        const h = tex.height * sy;
 
-        // Vertices relative to the pivot (unrotated)
         const x1 = -px * w;
         const y1 = -py * h;
         const x2 = x1 + w;
@@ -218,49 +219,214 @@ class Batcher {
         const sin = Math.sin(rot);
         const [r, g, b, a] = this.color;
 
-        // Rotation and translation: x' = x*cos - y*sin + tx, y' = x*sin + y*cos + ty
-        // Top-left
+        const baseVert = this.currVertCount;
+
+        // Add 4 vertices
         this.vertex(x + x1 * cos - y1 * sin, y + x1 * sin + y1 * cos, u1, v1, r, g, b, a);
-        // Top-right
         this.vertex(x + x2 * cos - y2 * sin, y + x2 * sin + y2 * cos, u2, v1, r, g, b, a);
-        // Bottom-right
         this.vertex(x + x3 * cos - y3 * sin, y + x3 * sin + y3 * cos, u2, v2, r, g, b, a);
-        // Bottom-left
         this.vertex(x + x4 * cos - y4 * sin, y + x4 * sin + y4 * cos, u1, v2, r, g, b, a);
 
-        this.currQuad++;
+        // Add 6 indices for 2 triangles
+        this.indices[this.currIndex++] = baseVert;
+        this.indices[this.currIndex++] = baseVert + 1;
+        this.indices[this.currIndex++] = baseVert + 2;
+        this.indices[this.currIndex++] = baseVert;
+        this.indices[this.currIndex++] = baseVert + 2;
+        this.indices[this.currIndex++] = baseVert + 3;
     }
 
     /**
-     * Draws a texture with optional transformations.
-     * @param {Texture} tex The texture to draw.
-     * @param {number} x The world x-position.
-     * @param {number} y The world y-position.
-     * @param {number} [rot=0] The rotation angle in radians.
-     * @param {number} [sx=1] The scale factor on the x-axis.
-     * @param {number} [sy=1] The scale factor on the y-axis.
-     * @param {number} [px=0.5] The pivot point x-coordinate (0.0 to 1.0).
-     * @param {number} [py=0.5] The pivot point y-coordinate (0.0 to 1.0).
-     * @param {number} [u1=0] The left u texture coordinate.
-     * @param {number} [v1=0] The top v texture coordinate.
-     * @param {number} [u2=1] The right u texture coordinate.
-     * @param {number} [v2=1] The bottom v texture coordinate.
-     */
-    drawTex(tex, x, y, rot = 0, sx = 1, sy = 1, px = 0.5, py = 0.5, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
-        this.setTexture(tex);
-        this.pushQuad(x, y, tex.width, tex.height, rot, sx, sy, px, py, u1, v1, u2, v2);
-    }
-
-    /**
-     * Draws a solid colored rectangle using the current color.
+     * Draws a solid colored rectangle.
      * @param {number} x The world x-position.
      * @param {number} y The world y-position.
      * @param {number} w The width of the rectangle.
      * @param {number} h The height of the rectangle.
      * @param {number} [rot=0] The rotation angle in radians.
      */
-    fillRect(x, y, w, h, rot = 0) {
+    drawFillRect(x, y, w, h, rot = 0) {
         this.setTexture(this.whitePixel);
-        this.pushQuad(x, y, w, h, rot);
+        this.ensureSpace(4, 6);
+
+        const x1 = 0;
+        const y1 = 0;
+        const x2 = w;
+        const y2 = 0;
+        const x3 = w;
+        const y3 = h;
+        const x4 = 0;
+        const y4 = h;
+
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
+        const [r, g, b, a] = this.color;
+
+        const baseVert = this.currVertCount;
+
+        this.vertex(x + x1 * cos - y1 * sin, y + x1 * sin + y1 * cos, 0.5, 0.5, r, g, b, a);
+        this.vertex(x + x2 * cos - y2 * sin, y + x2 * sin + y2 * cos, 0.5, 0.5, r, g, b, a);
+        this.vertex(x + x3 * cos - y3 * sin, y + x3 * sin + y3 * cos, 0.5, 0.5, r, g, b, a);
+        this.vertex(x + x4 * cos - y4 * sin, y + x4 * sin + y4 * cos, 0.5, 0.5, r, g, b, a);
+
+        this.indices[this.currIndex++] = baseVert;
+        this.indices[this.currIndex++] = baseVert + 1;
+        this.indices[this.currIndex++] = baseVert + 2;
+        this.indices[this.currIndex++] = baseVert;
+        this.indices[this.currIndex++] = baseVert + 2;
+        this.indices[this.currIndex++] = baseVert + 3;
+    }
+
+    /**
+     * Draws a filled circle.
+     * @param {number} x The center x-position.
+     * @param {number} y The center y-position.
+     * @param {number} radius The radius of the circle.
+     * @param {number} [segments=32] The number of segments (higher = smoother).
+     */
+    drawCircle(x, y, radius, segments = 32) {
+        this.setTexture(this.whitePixel);
+        
+        // Need center vertex + perimeter vertices
+        const numVertices = segments + 1;
+        const numIndices = segments * 3;
+        
+        this.ensureSpace(numVertices, numIndices);
+
+        const [r, g, b, a] = this.color;
+        const baseVert = this.currVertCount;
+
+        // Center vertex
+        this.vertex(x, y, 0.5, 0.5, r, g, b, a);
+
+        // Perimeter vertices
+        for (let i = 0; i < segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            const px = x + Math.cos(angle) * radius;
+            const py = y + Math.sin(angle) * radius;
+            this.vertex(px, py, 0.5, 0.5, r, g, b, a);
+        }
+
+        // Create triangles (fan from center)
+        for (let i = 0; i < segments; i++) {
+            this.indices[this.currIndex++] = baseVert; // center
+            this.indices[this.currIndex++] = baseVert + 1 + i;
+            this.indices[this.currIndex++] = baseVert + 1 + ((i + 1) % segments);
+        }
+    }
+
+    /**
+     * Draws a line strip (connected lines).
+     * @param {number[]} points Array of points [x1, y1, x2, y2, ...].
+     * @param {number} [thickness=1] Line thickness in pixels.
+     * @param {boolean} [closed=false] Whether to close the line loop.
+     */
+    drawLines(points, thickness = 1, closed = false) {
+        if (points.length < 4) {
+            throw new Error("At least two points (4 values) are required to draw lines.");
+        }
+
+        this.setTexture(this.whitePixel);
+
+        const numPoints = points.length / 2;
+        const numSegments = closed ? numPoints : numPoints - 1;
+        const numVertices = numPoints * 2;
+        const numIndices = numSegments * 6;
+
+        this.ensureSpace(numVertices, numIndices);
+
+        const [r, g, b, a] = this.color;
+        const halfThickness = thickness * 0.5;
+        const baseVert = this.currVertCount;
+
+        // Generate vertices along the line with perpendicular offset
+        for (let i = 0; i < numPoints; i++) {
+            const x1 = points[i * 2];
+            const y1 = points[i * 2 + 1];
+            
+            // Calculate perpendicular direction
+            let nx, ny;
+            if (i < numPoints - 1 || closed) {
+                const nextIdx = (i + 1) % numPoints;
+                const x2 = points[nextIdx * 2];
+                const y2 = points[nextIdx * 2 + 1];
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                
+                if (len > 0.001) {
+                    nx = -dy / len;
+                    ny = dx / len;
+                } else {
+                    nx = 0;
+                    ny = 1;
+                }
+            } else {
+                // Last point in open line - use previous segment direction
+                const x0 = points[(i - 1) * 2];
+                const y0 = points[(i - 1) * 2 + 1];
+                const dx = x1 - x0;
+                const dy = y1 - y0;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                
+                if (len > 0.001) {
+                    nx = -dy / len;
+                    ny = dx / len;
+                } else {
+                    nx = 0;
+                    ny = 1;
+                }
+            }
+
+            // Two vertices per point (offset by perpendicular)
+            this.vertex(x1 + nx * halfThickness, y1 + ny * halfThickness, 0.5, 0.5, r, g, b, a);
+            this.vertex(x1 - nx * halfThickness, y1 - ny * halfThickness, 0.5, 0.5, r, g, b, a);
+        }
+
+        // Generate indices for quads
+        for (let i = 0; i < numSegments; i++) {
+            const curr = baseVert + i * 2;
+            const next = baseVert + ((i + 1) % numPoints) * 2;
+
+            this.indices[this.currIndex++] = curr;
+            this.indices[this.currIndex++] = curr + 1;
+            this.indices[this.currIndex++] = next;
+            this.indices[this.currIndex++] = curr + 1;
+            this.indices[this.currIndex++] = next + 1;
+            this.indices[this.currIndex++] = next;
+        }
+    }
+
+    /**
+     * Draws a filled polygon.
+     * @param {number[]} points Array of points [x1, y1, x2, y2, ...].
+     */
+    drawPolygon(points) {
+        if (points.length < 6) {
+            throw new Error("A polygon requires at least 3 points (6 values).");
+        }
+
+        this.setTexture(this.whitePixel);
+
+        const numPoints = points.length / 2;
+        // Use fan triangulation from first vertex
+        const numVertices = numPoints;
+        const numIndices = (numPoints - 2) * 3;
+
+        this.ensureSpace(numVertices, numIndices);
+
+        const [r, g, b, a] = this.color;
+        const baseVert = this.currVertCount;
+
+        // Add all vertices
+        for (let i = 0; i < numPoints; i++) {
+            this.vertex(points[i * 2], points[i * 2 + 1], 0.5, 0.5, r, g, b, a);
+        }
+
+        // Fan triangulation from first vertex
+        for (let i = 1; i < numPoints - 1; i++) {
+            this.indices[this.currIndex++] = baseVert;
+            this.indices[this.currIndex++] = baseVert + i;
+            this.indices[this.currIndex++] = baseVert + i + 1;
+        }
     }
 }
