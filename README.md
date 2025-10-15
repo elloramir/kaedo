@@ -1,10 +1,11 @@
 ### Kaedo
-A framework that helps you create games without making choices for you.
-The philosophy behind Kaedo is to provide a toolchain that makes the boring stuff easier, while still letting you do things your own way.
-Unlike most JavaScript gaming and rendering frameworks, Kaedo is designed to be as immediate-mode as possible, giving you greater control and flexibility to make your own decisions.
+Kaedo is a framework designed to help you create games without getting in your way.
+Its philosophy is to make development simpler, while still giving you the freedom to build things your own way.
 
-You can create batchers to handle multiple draw calls efficiently, as shown in the example below.
-This short example covers the essential steps needed to create a 2D scene.
+Unlike most JavaScript game and rendering frameworks, Kaedo takes an immediate-mode approach, giving you direct control and flexibility over how everything works.
+
+For example, you can create batchers to efficiently handle multiple draw calls.
+The short example below walks you through the basic steps for setting up a simple 2D scene.
 
 ```js
 const canvas = document.getElementById("screen");
