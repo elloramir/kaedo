@@ -28,3 +28,11 @@ batcher.setColor(1, 1, 1, 1);
 batcher.drawStr(font, "Hello, Kaedo!", 10, 10);
 batcher.flush();
 ```
+
+The result of the above operation will look like this.
+The framebuffer texture is flipped because the Y axis is actually -1 in OpenGL screen space.
+You can solve this by multiplying the UV coordinates in the draw texture pass by -1.
+
+<p align="center">
+  <img src="https://i.imgur.com/9GXQBUG.png" width="600" />
+</p>
