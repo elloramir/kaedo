@@ -5,6 +5,7 @@ import { createWhitePixel } from "./utils.js";
 import { orthoMat4 } from "./math.js";
 import Texture from "./texture.js";
 import Shader from "./shader.js";
+import Framebuffer from "./framebuffer.js";
 
 function Batcher(gl, maxVertices, maxIndices) {
     maxVertices = maxVertices !== undefined ? maxVertices : 4096;
@@ -27,6 +28,7 @@ function Batcher(gl, maxVertices, maxIndices) {
     this.texture = null;
     this.shader = null;
     this.color = [1, 1, 1, 1];
+    this.currentTarget = null; // Current render target (null = canvas)
 
     this.proj = orthoMat4(0, this.gl.canvas.width, this.gl.canvas.height, 0, -1, 1);
 
@@ -115,6 +117,32 @@ Batcher.prototype.setShader = function (shader) {
     }
 };
 
+Batcher.prototype.setRenderTarget = function (framebuffer) {
+    this.flush();
+
+    if (framebuffer === null) {
+        // Render to canvas
+        if (this.currentTarget) {
+            this.currentTarget.unbind();
+        }
+        this.currentTarget = null;
+        // Update projection for canvas dimensions
+        this.proj = orthoMat4(0, this.gl.canvas.width, this.gl.canvas.height, 0, -1, 1);
+    } else {
+        // Render to framebuffer
+        framebuffer.bind();
+        this.currentTarget = framebuffer;
+        // Update projection for framebuffer dimensions
+        this.proj = orthoMat4(0, framebuffer.width, framebuffer.height, 0, -1, 1);
+    }
+
+    // Update shader projection matrix
+    if (this.shader) {
+        this.gl.useProgram(this.shader.id);
+        this.gl.uniformMatrix4fv(this.shader.getUniform('u_proj'), false, this.proj);
+    }
+};
+
 Batcher.prototype.vertex = function (x, y, u, v, r, g, b, a) {
     this.vertices[this.currVert++] = x;
     this.vertices[this.currVert++] = y;
@@ -148,8 +176,11 @@ Batcher.prototype.drawTex = function (tex, x, y, rot, sx, sy, px, py, u1, v1, u2
     this.setTexture(tex);
     this.ensureSpace(4, 6);
 
-    const w = tex.width * sx;
-    const h = tex.height * sy;
+    // Calculate the actual pixel size of the UV region
+    const uvWidth = u2 - u1;
+    const uvHeight = v2 - v1;
+    const w = tex.width * uvWidth * sx;
+    const h = tex.height * uvHeight * sy;
 
     const x1 = -px * w;
     const y1 = -py * h;
@@ -359,49 +390,48 @@ Batcher.prototype.drawPolygon = function (points) {
 };
 
 Batcher.prototype.drawStr = function (font, text, x, y) {
-    this.setTexture(font.texture);
-
-    let offsetX = x;
-    const r = this.color[0];
-    const g = this.color[1];
-    const b = this.color[2];
-    const a = this.color[3];
-    const texWidth = font.texture.width;
-    const texHeight = font.texture.height;
+    let cursorX = x;
+    let cursorY = y;
 
     for (let i = 0; i < text.length; i++) {
         const char = text[i];
+        if (char === '\n') {
+            cursorX = x;
+            cursorY += font.fontSize;
+            continue;
+        }
+
         const charData = font.getChar(char);
+        if (!charData) {
+            continue;
+        }
 
-        if (!charData) continue;
+        const texWidth = font.texture.width;
+        const texHeight = font.texture.height;
 
-        this.ensureSpace(4, 6);
-
-        const w = charData.width;
-        const h = charData.height;
-
-        // Calculate UV coordinates directly without creating objects
+        // Calculate UV coordinates
         const u1 = charData.x / texWidth;
         const v1 = charData.y / texHeight;
-        const u2 = (charData.x + w) / texWidth;
-        const v2 = (charData.y + h) / texHeight;
+        const u2 = (charData.x + charData.width) / texWidth;
+        const v2 = (charData.y + charData.height) / texHeight;
 
-        const baseVert = this.currVertCount;
+        // Use drawTex with custom UVs
+        this.drawTex(
+            font.texture,
+            cursorX,
+            cursorY,
+            0,      // rot
+            1,      // sx
+            1,      // sy
+            0,      // px
+            0,      // py
+            u1,     // u1
+            v1,     // v1
+            u2,     // u2
+            v2      // v2
+        );
 
-        // Draw character quad
-        this.vertex(offsetX, y, u1, v1, r, g, b, a);
-        this.vertex(offsetX + w, y, u2, v1, r, g, b, a);
-        this.vertex(offsetX + w, y + h, u2, v2, r, g, b, a);
-        this.vertex(offsetX, y + h, u1, v2, r, g, b, a);
-
-        this.indices[this.currIndex++] = baseVert;
-        this.indices[this.currIndex++] = baseVert + 1;
-        this.indices[this.currIndex++] = baseVert + 2;
-        this.indices[this.currIndex++] = baseVert;
-        this.indices[this.currIndex++] = baseVert + 2;
-        this.indices[this.currIndex++] = baseVert + 3;
-
-        offsetX += w;
+        cursorX += charData.width;
     }
 };
 

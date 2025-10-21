@@ -88,6 +88,10 @@ Font.prototype.createAtlas = function () {
         x += width;
     }
 
+    // Debug: uncomment to visualize the atlas
+    // document.body.appendChild(canvas);
+    // canvas.style.border = "2px solid red";
+
     // Create texture from canvas with the specified filter
     return new Texture(this.gl, canvas, this.filter);
 };
