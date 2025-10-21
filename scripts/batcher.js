@@ -33,6 +33,14 @@ function Batcher(gl, maxVertices = 4096, maxIndices = 6144) {
 
     this.whitePixel = new Texture(this.gl, createWhitePixel());
     this.setTexture(this.whitePixel);
+
+    // Reusable temp array for drawRect
+    this._rectPoints = new Float32Array(8);
+
+    // Transform matrix (2x3 affine): [a, b, c, d, tx, ty]
+    // Represents: [scaleX*cos, scaleX*sin, scaleY*-sin, scaleY*cos, translateX, translateY]
+    this.transform = [1, 0, 0, 1, 0, 0]; // Identity matrix
+    this.transformStack = [];
 }
 
 Batcher.prototype.frame = function () {
@@ -141,8 +149,12 @@ Batcher.prototype.setRenderTarget = function (framebuffer) {
 };
 
 Batcher.prototype.vertex = function (x, y, u, v, r, g, b, a) {
-    this.vertices[this.currVert++] = x;
-    this.vertices[this.currVert++] = y;
+    // Apply transform matrix
+    const tx = this.transform[0] * x + this.transform[2] * y + this.transform[4];
+    const ty = this.transform[1] * x + this.transform[3] * y + this.transform[5];
+
+    this.vertices[this.currVert++] = tx;
+    this.vertices[this.currVert++] = ty;
     this.vertices[this.currVert++] = u;
     this.vertices[this.currVert++] = v;
     this.vertices[this.currVert++] = r;
@@ -159,25 +171,52 @@ Batcher.prototype.ensureSpace = function (numVertices, numIndices) {
     }
 };
 
-Batcher.prototype.drawTex = function (tex, x, y, rot = 0, sx = 1, sy = 1, px = 0, py = 0, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
-    this.setTexture(tex);
-    this.ensureSpace(4, 6);
+Batcher.prototype.pushTransform = function () {
+    this.transformStack.push([...this.transform]);
+};
 
-    // Calculate the actual pixel size of the UV region
-    const uvWidth = u2 - u1;
-    const uvHeight = v2 - v1;
-    const w = tex.width * uvWidth * sx;
-    const h = tex.height * uvHeight * sy;
+Batcher.prototype.popTransform = function () {
+    if (this.transformStack.length > 0) {
+        this.transform = this.transformStack.pop();
+    }
+};
 
-    const x1 = -px * w;
-    const y1 = -py * h;
-    const x2 = x1 + w;
-    const y2 = y1;
-    const x3 = x1 + w;
-    const y3 = y1 + h;
-    const x4 = x1;
-    const y4 = y1 + h;
+Batcher.prototype.resetTransform = function () {
+    this.transform[0] = 1;
+    this.transform[1] = 0;
+    this.transform[2] = 0;
+    this.transform[3] = 1;
+    this.transform[4] = 0;
+    this.transform[5] = 0;
+};
 
+Batcher.prototype.pushTranslate = function (x, y) {
+    this.transform[4] += this.transform[0] * x + this.transform[2] * y;
+    this.transform[5] += this.transform[1] * x + this.transform[3] * y;
+};
+
+Batcher.prototype.pushRotate = function (angle) {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const a = this.transform[0];
+    const b = this.transform[1];
+    const c = this.transform[2];
+    const d = this.transform[3];
+
+    this.transform[0] = a * cos + c * sin;
+    this.transform[1] = b * cos + d * sin;
+    this.transform[2] = a * -sin + c * cos;
+    this.transform[3] = b * -sin + d * cos;
+};
+
+Batcher.prototype.pushScale = function (sx, sy = sx) {
+    this.transform[0] *= sx;
+    this.transform[1] *= sx;
+    this.transform[2] *= sy;
+    this.transform[3] *= sy;
+};
+
+Batcher.prototype.pushQuad = function (x, y, x1, y1, x2, y2, x3, y3, x4, y4, rot, u1, v1, u2, v2) {
     const cos = Math.cos(rot);
     const sin = Math.sin(rot);
     const r = this.color[0];
@@ -200,6 +239,28 @@ Batcher.prototype.drawTex = function (tex, x, y, rot = 0, sx = 1, sy = 1, px = 0
     this.indices[this.currIndex++] = baseVert + 3;
 };
 
+Batcher.prototype.drawTex = function (tex, x, y, rot = 0, sx = 1, sy = 1, px = 0, py = 0, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
+    this.setTexture(tex);
+    this.ensureSpace(4, 6);
+
+    // Calculate the actual pixel size of the UV region
+    const uvWidth = u2 - u1;
+    const uvHeight = v2 - v1;
+    const w = tex.width * uvWidth * sx;
+    const h = tex.height * uvHeight * sy;
+
+    const x1 = -px * w;
+    const y1 = -py * h;
+    const x2 = x1 + w;
+    const y2 = y1;
+    const x3 = x1 + w;
+    const y3 = y1 + h;
+    const x4 = x1;
+    const y4 = y1 + h;
+
+    this.pushQuad(x, y, x1, y1, x2, y2, x3, y3, x4, y4, rot, u1, v1, u2, v2);
+};
+
 Batcher.prototype.drawFillRect = function (x, y, w, h, rot = 0) {
     this.setTexture(this.whitePixel);
     this.ensureSpace(4, 6);
@@ -213,26 +274,40 @@ Batcher.prototype.drawFillRect = function (x, y, w, h, rot = 0) {
     const x4 = 0;
     const y4 = h;
 
-    const cos = Math.cos(rot);
-    const sin = Math.sin(rot);
-    const r = this.color[0];
-    const g = this.color[1];
-    const b = this.color[2];
-    const a = this.color[3];
+    this.pushQuad(x, y, x1, y1, x2, y2, x3, y3, x4, y4, rot, 0.5, 0.5, 0.5, 0.5);
+};
 
-    const baseVert = this.currVertCount;
+Batcher.prototype.drawRect = function (x, y, w, h, thickness = 1, rot = 0) {
+    const points = this._rectPoints;
 
-    this.vertex(x + x1 * cos - y1 * sin, y + x1 * sin + y1 * cos, 0.5, 0.5, r, g, b, a);
-    this.vertex(x + x2 * cos - y2 * sin, y + x2 * sin + y2 * cos, 0.5, 0.5, r, g, b, a);
-    this.vertex(x + x3 * cos - y3 * sin, y + x3 * sin + y3 * cos, 0.5, 0.5, r, g, b, a);
-    this.vertex(x + x4 * cos - y4 * sin, y + x4 * sin + y4 * cos, 0.5, 0.5, r, g, b, a);
+    if (rot !== 0) {
+        const cos = Math.cos(rot);
+        const sin = Math.sin(rot);
 
-    this.indices[this.currIndex++] = baseVert;
-    this.indices[this.currIndex++] = baseVert + 1;
-    this.indices[this.currIndex++] = baseVert + 2;
-    this.indices[this.currIndex++] = baseVert;
-    this.indices[this.currIndex++] = baseVert + 2;
-    this.indices[this.currIndex++] = baseVert + 3;
+        // Top-left
+        points[0] = x;
+        points[1] = y;
+        // Top-right
+        points[2] = x + w * cos;
+        points[3] = y + w * sin;
+        // Bottom-right
+        points[4] = x + w * cos - h * sin;
+        points[5] = y + w * sin + h * cos;
+        // Bottom-left
+        points[6] = x - h * sin;
+        points[7] = y + h * cos;
+    } else {
+        points[0] = x;
+        points[1] = y;
+        points[2] = x + w;
+        points[3] = y;
+        points[4] = x + w;
+        points[5] = y + h;
+        points[6] = x;
+        points[7] = y + h;
+    }
+
+    this.drawLines(points, thickness, true);
 };
 
 Batcher.prototype.drawCircle = function (x, y, radius, segments = 32) {

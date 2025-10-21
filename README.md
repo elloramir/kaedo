@@ -47,3 +47,14 @@ You can solve this by multiplying the UV coordinates in the draw texture pass by
 <p align="center">
   <img src="https://i.imgur.com/9GXQBUG.png" width="600" />
 </p>
+
+We also have transformation stacks, which let you apply multiple transformations in order. They are useful for translating, rotating, and scaling objects incrementally without changing the global scene. For example:
+
+```js
+batcher.pushTransform();           // Push new transform
+batcher.pushTranslate(100, 100);   // Moves origin
+batcher.pushRotate(Math.PI / 4);   // Rotates 45°
+batcher.pushScale(2);              // Twice as big
+batcher.drawFillRect(0, 0, 50, 50);
+batcher.popTransform();  
+```
