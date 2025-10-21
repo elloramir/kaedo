@@ -13,11 +13,22 @@ const gl = canvas.getContext("webgl");
 const batcher = new Kaedo.Batcher(gl);
 const cat = await Kaedo.Texture.loadFromFile(gl, "assets/cat.jpg", "nearest");
 const font = await Kaedo.Font.load(gl, "monospace", 24, "nearest");
+const framebuffer = new Kaedo.Framebuffer(gl, 512, 512, "nearest");
 
 batcher.frame();
 batcher.setShader(null);
+batcher.setRenderTarget(framebuffer);
+batcher.clear(0.1, 0.1, 0.2, 1);
+batcher.setColor(1, 1, 0, 1);
+batcher.drawCircle(256, 256, 100);
+batcher.setColor(1, 1, 1, 1);
+batcher.drawStr(font, "Offscreen!", 180, 240);
+batcher.flush();
+
+batcher.setRenderTarget(null);
 batcher.clear(0.2, 0.3, 0.3, 1);
 batcher.setColor(1, 1, 1, 1);
+batcher.drawTex(framebuffer, 0, 50);
 batcher.drawTex(cat, 0, 0);
 batcher.drawCircle(200, 200, 50);
 batcher.setColor(1, 0, 0, 1);

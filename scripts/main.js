@@ -3,17 +3,12 @@ import Kaedo from "./index.js";
 const canvas = document.getElementById("screen");
 const gl = canvas.getContext("webgl");
 const batcher = new Kaedo.Batcher(gl);
-const cat = await Kaedo.Texture.loadFromFile(gl, "assets/cat.jpg", "nearest");
-const font = await Kaedo.Font.load(gl, "monospace", 24, "nearest");
-
-// Debug: Check font atlas
-console.log("Font texture:", font.texture);
-console.log("Font charMap:", font.charMap);
-console.log("First char 'H':", font.getChar('H'));
-
-const framebuffer = new Kaedo.Framebuffer(gl, 512, 512, "nearest");
+const cat = await Kaedo.Texture.loadFromFile(gl, "assets/cat.jpg");
+const font = await Kaedo.Font.load(gl, "monospace", 24);
+const framebuffer = new Kaedo.Framebuffer(gl, 512, 512);
 
 // Render to framebuffer first
+batcher.frame();
 batcher.setShader(null);
 batcher.setRenderTarget(framebuffer);
 batcher.clear(0.1, 0.1, 0.2, 1);
@@ -25,7 +20,6 @@ batcher.flush();
 
 // Render to canvas
 batcher.setRenderTarget(null);
-batcher.frame();
 batcher.clear(0.2, 0.3, 0.3, 1);
 batcher.setColor(1, 1, 1, 1);
 batcher.drawTex(framebuffer, 0, 50);

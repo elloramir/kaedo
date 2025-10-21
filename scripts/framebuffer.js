@@ -1,7 +1,7 @@
 // Copyright 2025 Elloramir.
 // All rights over the code are under MIT.
 
-function Framebuffer(gl, width, height, filter = "nearest") {
+function Framebuffer(gl, width, height, filter = "linear") {
     this.gl = gl;
     this.width = width;
     this.height = height;

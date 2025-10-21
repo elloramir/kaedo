@@ -3,7 +3,7 @@
 
 import { isPowerOf2 } from "./utils.js";
 
-function Texture(gl, img, filter = "nearest") {
+function Texture(gl, img, filter = "linear") {
     this.gl = gl;
     this.id = gl.createTexture();
     this.width = img.width;
