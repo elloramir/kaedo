@@ -1,0 +1,44 @@
+name: Build and Release Kaedo
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      # Run bundle script
+      - name: Run bundle
+        run: node bundle.js
+
+      # Create kaedo.zip ignoring main.js
+      - name: Create ZIP archive
+        run: |
+          cd scripts
+          zip -r ../kaedo.zip . -x main.js
+          cd ..
+
+      # Create or update release and upload assets
+      - name: Create/Update release with assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: kaedo-latest
+          name: Kaedo Latest
+          files: |
+            dist/kaedo.js
+            kaedo.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
