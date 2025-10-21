@@ -1,20 +1,13 @@
 // Copyright 2025 Elloramir.
 // All rights over the code are under MIT.
 
-function Framebuffer(gl, width, height, filter) {
-    filter = filter !== undefined ? filter : "nearest";
-
+function Framebuffer(gl, width, height, filter = "nearest") {
     this.gl = gl;
     this.width = width;
     this.height = height;
 
     // Convert string filter to WebGL constant
-    let glFilter;
-    if (filter === "linear") {
-        glFilter = gl.LINEAR;
-    } else {
-        glFilter = gl.NEAREST;
-    }
+    const glFilter = filter === "linear" ? gl.LINEAR : gl.NEAREST;
 
     // Create texture for the framebuffer
     this.id = gl.createTexture();
@@ -40,17 +33,6 @@ function Framebuffer(gl, width, height, filter) {
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
-
-Framebuffer.prototype.bind = function () {
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.fbo);
-    this.gl.viewport(0, 0, this.width, this.height);
-};
-
-Framebuffer.prototype.unbind = function () {
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    // Restore canvas viewport
-    this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
-};
 
 Framebuffer.prototype.destroy = function () {
     if (this.fbo) {

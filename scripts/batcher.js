@@ -5,12 +5,8 @@ import { createWhitePixel } from "./utils.js";
 import { orthoMat4 } from "./math.js";
 import Texture from "./texture.js";
 import Shader from "./shader.js";
-import Framebuffer from "./framebuffer.js";
 
-function Batcher(gl, maxVertices, maxIndices) {
-    maxVertices = maxVertices !== undefined ? maxVertices : 4096;
-    maxIndices = maxIndices !== undefined ? maxIndices : 6144;
-
+function Batcher(gl, maxVertices = 4096, maxIndices = 6144) {
     this.gl = gl;
     this.vbo = this.gl.createBuffer();
     this.ibo = this.gl.createBuffer();
@@ -45,8 +41,7 @@ Batcher.prototype.frame = function () {
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 };
 
-Batcher.prototype.clear = function (r, g, b, a) {
-    a = a !== undefined ? a : 1;
+Batcher.prototype.clear = function (r, g, b, a = 1) {
     this.gl.clearColor(r, g, b, a);
     this.gl.clear(this.gl.COLOR_BUFFER_BIT);
 }
@@ -90,8 +85,7 @@ Batcher.prototype.flush = function () {
     }
 };
 
-Batcher.prototype.setColor = function (r, g, b, a) {
-    a = a !== undefined ? a : 1;
+Batcher.prototype.setColor = function (r, g, b, a = 1) {
     this.color[0] = r;
     this.color[1] = g;
     this.color[2] = b;
@@ -123,14 +117,17 @@ Batcher.prototype.setRenderTarget = function (framebuffer) {
     if (framebuffer === null) {
         // Render to canvas
         if (this.currentTarget) {
-            this.currentTarget.unbind();
+            // Restore canvas viewport
+            this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+            this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
         }
         this.currentTarget = null;
         // Update projection for canvas dimensions
         this.proj = orthoMat4(0, this.gl.canvas.width, this.gl.canvas.height, 0, -1, 1);
     } else {
         // Render to framebuffer
-        framebuffer.bind();
+        this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, framebuffer.fbo);
+        this.gl.viewport(0, 0, framebuffer.width, framebuffer.height);
         this.currentTarget = framebuffer;
         // Update projection for framebuffer dimensions
         this.proj = orthoMat4(0, framebuffer.width, framebuffer.height, 0, -1, 1);
@@ -162,17 +159,7 @@ Batcher.prototype.ensureSpace = function (numVertices, numIndices) {
     }
 };
 
-Batcher.prototype.drawTex = function (tex, x, y, rot, sx, sy, px, py, u1, v1, u2, v2) {
-    rot = rot !== undefined ? rot : 0;
-    sx = sx !== undefined ? sx : 1;
-    sy = sy !== undefined ? sy : 1;
-    px = px !== undefined ? px : 0;
-    py = py !== undefined ? py : 0;
-    u1 = u1 !== undefined ? u1 : 0;
-    v1 = v1 !== undefined ? v1 : 0;
-    u2 = u2 !== undefined ? u2 : 1;
-    v2 = v2 !== undefined ? v2 : 1;
-
+Batcher.prototype.drawTex = function (tex, x, y, rot = 0, sx = 1, sy = 1, px = 0, py = 0, u1 = 0, v1 = 0, u2 = 1, v2 = 1) {
     this.setTexture(tex);
     this.ensureSpace(4, 6);
 
@@ -213,9 +200,7 @@ Batcher.prototype.drawTex = function (tex, x, y, rot, sx, sy, px, py, u1, v1, u2
     this.indices[this.currIndex++] = baseVert + 3;
 };
 
-Batcher.prototype.drawFillRect = function (x, y, w, h, rot) {
-    rot = rot !== undefined ? rot : 0;
-
+Batcher.prototype.drawFillRect = function (x, y, w, h, rot = 0) {
     this.setTexture(this.whitePixel);
     this.ensureSpace(4, 6);
 
@@ -250,9 +235,7 @@ Batcher.prototype.drawFillRect = function (x, y, w, h, rot) {
     this.indices[this.currIndex++] = baseVert + 3;
 };
 
-Batcher.prototype.drawCircle = function (x, y, radius, segments) {
-    segments = segments !== undefined ? segments : 32;
-
+Batcher.prototype.drawCircle = function (x, y, radius, segments = 32) {
     this.setTexture(this.whitePixel);
 
     const numVertices = segments + 1;
@@ -282,10 +265,7 @@ Batcher.prototype.drawCircle = function (x, y, radius, segments) {
     }
 };
 
-Batcher.prototype.drawLines = function (points, thickness, closed) {
-    thickness = thickness !== undefined ? thickness : 1;
-    closed = closed !== undefined ? closed : false;
-
+Batcher.prototype.drawLines = function (points, thickness = 1, closed = false) {
     if (points.length < 4) {
         throw new Error("At least two points (4 values) are required to draw lines.");
     }

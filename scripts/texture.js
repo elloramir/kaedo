@@ -3,22 +3,14 @@
 
 import { isPowerOf2 } from "./utils.js";
 
-function Texture(gl, img, filter) {
-    filter = filter !== undefined ? filter : "nearest";
-
+function Texture(gl, img, filter = "nearest") {
     this.gl = gl;
     this.id = gl.createTexture();
     this.width = img.width;
     this.height = img.height;
 
     // Convert string filter to WebGL constant
-    let glFilter;
-    if (filter === "linear") {
-        glFilter = gl.LINEAR;
-    } else {
-        glFilter = gl.NEAREST; // default to nearest for retro games
-    }
-
+    const glFilter = filter === "linear" ? gl.LINEAR : gl.NEAREST;
     const isBase2 = isPowerOf2(img.width) && isPowerOf2(img.height);
     const wrapMode = isBase2 ? gl.REPEAT : gl.CLAMP_TO_EDGE;
 

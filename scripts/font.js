@@ -11,12 +11,12 @@ const DEFAULT_CHARS =
     "áàâäãåçéèêëíìîïñóòôöõúùûüýÿÁÀÂÄÃÅÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜÝ";
 
 
-function Font(gl, fontFamily, fontSize, filter, chars) {
+function Font(gl, fontFamily, fontSize, filter = "nearest", chars = DEFAULT_CHARS) {
     this.gl = gl;
     this.fontFamily = fontFamily;
     this.fontSize = fontSize;
-    this.chars = chars || DEFAULT_CHARS;
-    this.filter = filter !== undefined ? filter : "nearest";
+    this.chars = chars;
+    this.filter = filter;
 
     // Character metrics map: char -> {x, y, width, height}
     this.charMap = new Map();
@@ -87,10 +87,6 @@ Font.prototype.createAtlas = function () {
 
         x += width;
     }
-
-    // Debug: uncomment to visualize the atlas
-    // document.body.appendChild(canvas);
-    // canvas.style.border = "2px solid red";
 
     // Create texture from canvas with the specified filter
     return new Texture(this.gl, canvas, this.filter);
