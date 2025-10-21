@@ -1,5 +1,5 @@
 ### Kaedo
-Kaedo is a framework designed to help you create games without getting in your way.
+<a href="https://raw.githubusercontent.com/elloramir/kaedo/refs/heads/main/dist/kaedo.js" download="kaedo.js">Kaedo</a> is a framework designed to help you create games without getting in your way.
 Its philosophy is to make development simpler, while still giving you the freedom to build things your own way.
 
 Unlike most JavaScript game and rendering frameworks, Kaedo takes an immediate-mode approach, giving you direct control and flexibility over how everything works.

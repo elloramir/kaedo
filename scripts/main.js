@@ -12,7 +12,7 @@ batcher.frame();
 batcher.setShader(null);
 batcher.setRenderTarget(framebuffer);
 batcher.clear(0.1, 0.1, 0.2, 1);
-batcher.setColor(1, 1, 0, 1);
+batcher.setColor(0, 0, 0, 1);
 batcher.drawCircle(256, 256, 100);
 batcher.setColor(1, 1, 1, 1);
 batcher.drawStr(font, "Offscreen!", 180, 240);
