@@ -7,7 +7,7 @@ const cat = await Kaedo.Texture.loadFromFile(gl, "assets/cat.jpg");
 const font = await Kaedo.Font.load(gl, "monospace", 24);
 const framebuffer = new Kaedo.Framebuffer(gl, 512, 512);
 
-batcher.frame();
+batcher.beginFrame();
 {
     batcher.setShader(null);
     batcher.setRenderTarget(framebuffer);
@@ -38,4 +38,4 @@ batcher.frame();
     batcher.drawFillRect(0, 0, 50, 50);
     batcher.popTransform();
 }
-batcher.flush();
+batcher.endFrame();

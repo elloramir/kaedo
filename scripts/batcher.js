@@ -43,11 +43,15 @@ function Batcher(gl, maxVertices = 4096, maxIndices = 6144) {
     this.transformStack = [];
 }
 
-Batcher.prototype.frame = function () {
+Batcher.prototype.beginFrame = function () {
     this.gl.enable(this.gl.BLEND);
     this.gl.disable(this.gl.CULL_FACE);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 };
+
+Batcher.prototype.endFrame = function () {
+    this.flush();
+}
 
 Batcher.prototype.clear = function (r, g, b, a = 1) {
     this.gl.clearColor(r, g, b, a);
