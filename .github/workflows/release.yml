@@ -24,7 +24,7 @@ jobs:
       - name: Install Webpack CLI
         run: npm install -g webpack webpack-cli
 
-      # Build bundle using Webpack CLI (instead of bundle.js)
+      # Build bundle using Webpack CLI
       - name: Bundle with Webpack
         run: |
           webpack ./scripts/index.js \
@@ -41,6 +41,21 @@ jobs:
           cd scripts
           zip -r ../kaedo.zip . -x main.js
           cd ..
+
+      # Remove old kaedo.js asset from release if it exists
+      - name: Remove old kaedo.js from release
+        run: |
+          release_id=$(gh api repos/${{ github.repository }}/releases/tags/kaedo-latest --jq '.id')
+          assets=$(gh api repos/${{ github.repository }}/releases/$release_id/assets --jq '.[] | .id + " " + .name')
+          for asset in $assets; do
+            asset_id=$(echo $asset | awk '{print $1}')
+            asset_name=$(echo $asset | awk '{print $2}')
+            if [ "$asset_name" = "kaedo.js" ]; then
+              gh api -X DELETE repos/${{ github.repository }}/releases/assets/$asset_id
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Create or update release and upload assets
       - name: Create/Update release with assets
