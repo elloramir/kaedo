@@ -46,14 +46,14 @@ jobs:
       - name: Remove old kaedo.js from release
         run: |
           release_id=$(gh api repos/${{ github.repository }}/releases/tags/kaedo-latest --jq '.id')
-          assets=$(gh api repos/${{ github.repository }}/releases/$release_id/assets --jq '.[] | .id + " " + .name')
-          for asset in $assets; do
-            asset_id=$(echo $asset | awk '{print $1}')
-            asset_name=$(echo $asset | awk '{print $2}')
-            if [ "$asset_name" = "kaedo.js" ]; then
-              gh api -X DELETE repos/${{ github.repository }}/releases/assets/$asset_id
-            fi
-          done
+          # Filtra apenas o asset kaedo.js
+          asset_id=$(gh api repos/${{ github.repository }}/releases/$release_id/assets --jq '.[] | select(.name=="kaedo.js") | .id')
+          if [ -n "$asset_id" ]; then
+            gh api -X DELETE repos/${{ github.repository }}/releases/assets/$asset_id
+            echo "Deleted old kaedo.js from release"
+          else
+            echo "No old kaedo.js found"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
