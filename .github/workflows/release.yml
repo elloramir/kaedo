@@ -20,9 +20,20 @@ jobs:
         with:
           node-version: '20'
 
-      # Run bundle script
-      - name: Run bundle
-        run: node bundle.js
+      # Install Webpack globally
+      - name: Install Webpack CLI
+        run: npm install -g webpack webpack-cli
+
+      # Build bundle using Webpack CLI (instead of bundle.js)
+      - name: Bundle with Webpack
+        run: |
+          webpack ./scripts/index.js \
+            --output-path ./dist \
+            --output-filename kaedo.min.js \
+            --mode production \
+            --output-library Kaedo \
+            --output-library-type global \
+            --output-global-object this
 
       # Create kaedo.zip ignoring main.js
       - name: Create ZIP archive
@@ -38,7 +49,7 @@ jobs:
           tag_name: kaedo-latest
           name: Kaedo Latest
           files: |
-            dist/kaedo.js
+            dist/kaedo.min.js
             kaedo.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
